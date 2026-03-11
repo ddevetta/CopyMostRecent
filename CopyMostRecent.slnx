@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="README.md" />
+  </Folder>
   <Project Path="CopyMostRecent/CopyMostRecent.csproj" Id="6eb9be0e-e321-4464-ab55-549281878aa9" />
   <Project Path="CopyMostRecentSetup/CopyMostRecentSetup.vdproj" Type="Installer">
     <Build />

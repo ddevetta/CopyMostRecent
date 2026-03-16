@@ -24,6 +24,6 @@ The code demonstrates some cool functionality that may be of interest, viz:
 - Providing feedback to the UI on progress, via the ```IProgress``` interface
 - Cancel an async function using a ```CancellationToken```
 - Low-level _buffered copy_ where one buffer is written while a new buffer is being read
-- Saving user parameter data by overriding the default ```ApplicationSettingsBase``` (see class ```UserOptions```)
+- Saving user parameter data using an override of the default ```ApplicationSettingsBase``` (see class ```UserOptions```)
 - A Setup installer that adds entries to the registry (to activate the Extended Context Menu option)
 

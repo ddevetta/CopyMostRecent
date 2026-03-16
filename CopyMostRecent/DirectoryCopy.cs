@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing.Text;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -136,18 +137,13 @@ namespace CopyMostRecent
                         {
                             FileInfo fromFile = new FileInfo(compare.SourceRootDir + entry.FileName);
                             FileInfo toFile = new FileInfo(compare.DestinationRootDir + entry.FileName);
-                            copyTasks[taskIX] = CopyTo(fromFile, toFile, 
+
+                            copyTasks[taskIX] = Task.Run(() => CopyTo(fromFile, toFile, 
                                 (bytes) => 
                                 { 
                                     progress.CopySize += bytes; 
-                                }, token);
-                            taskIX++;
-                            if (taskIX >= copyTasks.Length)
-                            {
-                                await Task.WhenAll(copyTasks);
-                                copyTasks.Initialize();
-                                taskIX = 0;
-                            }
+                                }, token));
+
                         }
                         catch (OperationCanceledException ocex)
                         {
@@ -158,6 +154,16 @@ namespace CopyMostRecent
                         catch (Exception ex)
                         {
                             results.Errors.Add(new Errors(entry.Flag, entry.FileName, ex.Message, ex.InnerException?.Message));
+                        }
+
+                        taskIX++;
+                        if (taskIX >= copyTasks.Length)
+                        {
+                            //Console.WriteLine("Waiting... " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
+                            await Task.WhenAll(copyTasks);
+                            copyTasks.Initialize();
+                            taskIX = 0;
+                            //Console.WriteLine("Done " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
                         }
                     }
                     if (token.IsCancellationRequested)
@@ -201,7 +207,7 @@ namespace CopyMostRecent
             bool A = true;
             int readCount = 0;
             Task writer = null;
-
+            //Console.WriteLine("Thread: " + Thread.CurrentThread.ManagedThreadId.ToString() + " - " + file + " - " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
             using (FileStream srce = file.OpenRead())
             {
                 if (!Directory.Exists(Path.GetDirectoryName(destination.FullName)))

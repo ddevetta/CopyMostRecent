@@ -25,6 +25,8 @@ namespace CopyMostRecent
         private ProgressLine progLine = new ProgressLine();
         private Plan currentPlan = null;
 
+        private readonly UserOptions options = new UserOptions();
+
         private CancellationTokenSource cancelSource = null;
 
         public FormMain()
@@ -122,8 +124,8 @@ namespace CopyMostRecent
                 DirectoryScan dsDest = new DirectoryScan(tbDestDir.Text);
 
                 // Kick off the scan tasks simultaneously
-                Task<DirectoryScanResults> sourceTask = doScanAsync(dsSource, token);
-                Task<DirectoryScanResults> destTask = doScanAsync(dsDest, token);
+                Task<DirectoryScanResults> sourceTask = Task.Run(() => doScanAsync(dsSource, token));
+                Task<DirectoryScanResults> destTask = Task.Run(() => doScanAsync(dsDest, token));
 
                 await Task.WhenAll(sourceTask, destTask);
 
@@ -252,8 +254,8 @@ namespace CopyMostRecent
                 cancelSource.Dispose();
             }
 
-            progLine.ShowResults(copyResults);
             flowResults.ScrollControlIntoView(progLine);
+            progLine.ShowResults(copyResults);
             btnClose.Text = "Close";
             btnGo.Text = "Scan";
             btnGo.Enabled = true;
@@ -278,7 +280,7 @@ namespace CopyMostRecent
                 flowResults.ScrollControlIntoView(progLine);
             });
 
-            r = await Task.Run(() => copier.CopyAsync(progress, token));
+            r = await copier.CopyAsync(progress, token, options.DummyCopy);
 
             return r;
         }
@@ -426,7 +428,7 @@ namespace CopyMostRecent
             FormOptions options = new FormOptions();
             if (options.ShowDialog() == DialogResult.OK) // Changes made and saved
             {
-                Console.WriteLine("new options"); // refresh the options
+                System.Diagnostics.Debug.WriteLine("new options"); // refresh the options
             }
         }
     }

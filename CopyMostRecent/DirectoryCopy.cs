@@ -70,6 +70,15 @@ namespace CopyMostRecent
     }
 
     /// <summary>
+    /// Object keeping track of the copy task results
+    /// </summary>
+    internal class CopyTaskResults
+    {
+        internal DirectoryCompareResultsEntry Entry;
+        internal Task Task;
+    }
+
+    /// <summary>
     /// Class for handling the Copy operation on the results of a Compare action
     /// </summary>
     public class DirectoryCopy
@@ -101,19 +110,23 @@ namespace CopyMostRecent
         /// <param name="token">A cancellation token. If a cancellation is invoked, the copy will terminate at a suitable point, rather than throw a <see cref="OperationCanceledException">.</param>
         /// <returns>A promise of a <see cref="DirectoryCopyResults"/> object.</returns>
         /// <exception cref="Exception">DirectoryCompareResults has not been supplied - use the constructor to initialise it.</exception>
-        public async Task<DirectoryCopyResults> CopyAsync(IProgress<DirectoryCopyProgress> progressReporter, CancellationToken token)
+        public async Task<DirectoryCopyResults> CopyAsync(IProgress<DirectoryCopyProgress> progressReporter, CancellationToken token, bool dummyCopy)
         {
             var results = new DirectoryCopyResults();
 
             int taskIX = 0;
-            Task[] copyTasks = new Task[4]; //  Do 4 copy-operations simultaneously
+            int maxTasks = 4;
+            CopyTaskResults[] copyTasks = new CopyTaskResults[maxTasks]; //  Do n copy-operations simultaneously
+            for (int i = 0; i < copyTasks.Length; i++)
+                copyTasks[i] = new CopyTaskResults();
 
             if (this.compare == null)
             {
                 throw new Exception("DirectoryCompareResults has not been supplied - use the constructor to initialise it.");
             }
 
-            Timer timer = new Timer((x) => { 
+            Timer timer = new Timer((x) =>
+            {
                 progressReporter.Report(progress);
             }, null, 0, ProgressRefreshMilliseconds);
 
@@ -125,7 +138,7 @@ namespace CopyMostRecent
                 foreach (DirectoryCompareResultsEntry entry in compare.Entries)
                 {
 
-                    if (entry.Flag == selection.Flag 
+                    if (entry.Flag == selection.Flag
                         && selection.CopySelected)
                     {
                         if (token.IsCancellationRequested)
@@ -138,18 +151,15 @@ namespace CopyMostRecent
                             FileInfo fromFile = new FileInfo(compare.SourceRootDir + entry.FileName);
                             FileInfo toFile = new FileInfo(compare.DestinationRootDir + entry.FileName);
 
-                            copyTasks[taskIX] = Task.Run(() => CopyTo(fromFile, toFile, 
-                                (bytes) => 
-                                { 
-                                    progress.CopySize += bytes; 
-                                }, token));
+                            copyTasks[taskIX].Entry = entry;
+                            copyTasks[taskIX].Task = Task.Run(() => 
+                                CopyTo(fromFile, toFile,
+                                    (bytes) =>
+                                    {
+                                        progress.CopySize += bytes;
+                                    }, token, dummyCopy));
 
-                        }
-                        catch (OperationCanceledException ocex)
-                        {
-                            results.Errors.Add(new Errors(entry.Flag, entry.FileName, ocex.Message, "File has been left in a partial state."));
-                            progress.CopyState = CopyState.Cancelled;
-                            break;
+                            System.Diagnostics.Debug.WriteLine("Tasking... " + taskIX.ToString() + " (Task.Id=" + copyTasks[taskIX].Task.Id.ToString() + ") " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
                         }
                         catch (Exception ex)
                         {
@@ -159,30 +169,56 @@ namespace CopyMostRecent
                         taskIX++;
                         if (taskIX >= copyTasks.Length)
                         {
-                            //Console.WriteLine("Waiting... " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
-                            await Task.WhenAll(copyTasks);
-                            copyTasks.Initialize();
-                            taskIX = 0;
-                            //Console.WriteLine("Done " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
+                            taskIX = await waitAll(taskIX, copyTasks, results);
                         }
                     }
                     if (token.IsCancellationRequested)
                         break;
                 }
             }
+            System.Diagnostics.Debug.WriteLine("Final wait...");
+            taskIX = await waitAll(taskIX, copyTasks, results);  // final wait of any still-running copy tasks
 
             timer.Change(Timeout.Infinite, Timeout.Infinite);
             timer.Dispose();
-            if (progress.CopyState < CopyState.Cancelled)
-                progress.CopyState = CopyState.Complete;
-            progress.CurrentFileName = string.Empty;
-            progressReporter.Report(progress);
+            //if (token.IsCancellationRequested)
+            //    progress.CopyState = CopyState.Cancelled;
+            //else 
+            //    progress.CopyState = CopyState.Complete;
+            //progress.CurrentFileName = string.Empty;
+            //progressReporter.Report(progress);
 
-            results.CopyState = progress.CopyState;
+            if (token.IsCancellationRequested)
+                results.CopyState = CopyState.Cancelled;
+            else
+                results.CopyState = CopyState.Complete;
             results.TotalCopyCount = progress.CopyCount;
             results.TotalCopySize = progress.CopySize;
 
             return results;
+        }
+
+        private static async Task<int> waitAll(int taskIX, CopyTaskResults[] copyTasks, DirectoryCopyResults results)
+        {
+            for (taskIX--; taskIX > -1; taskIX--)
+            {
+                System.Diagnostics.Debug.WriteLine("Waiting... " + taskIX.ToString() + " (Task.Id=" + copyTasks[taskIX].Task.Id.ToString() + ") " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
+                try     // Any exceptions raised in CopyTo will be caught here during await Task
+                {
+                    await copyTasks[taskIX].Task;
+                }
+                catch (OperationCanceledException ocex)
+                {
+                    results.Errors.Add(new Errors(copyTasks[taskIX].Entry.Flag, copyTasks[taskIX].Entry.FileName, ocex.Message, "File has been left in a partial state."));
+                }
+                catch (Exception ex)
+                {
+                    results.Errors.Add(new Errors(copyTasks[taskIX].Entry.Flag, copyTasks[taskIX].Entry.FileName, ex.Message, ex.InnerException?.Message));
+                }
+                System.Diagnostics.Debug.WriteLine("    Done.  " + taskIX.ToString() + " (Task.Id=" + copyTasks[taskIX].Task.Id.ToString() + ") " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
+            }
+
+            return 0;
         }
 
         /// <summary>
@@ -192,6 +228,7 @@ namespace CopyMostRecent
         /// Therefore, the exception would indicate that the destination file has been left in a partially-copied state.
         /// In a partial state, the destination file will be timestamped with current date/time, as the process copies the source timestamp only when completely copied.
         /// This will show up in a future scan as 'Source is older than Destination'.
+        /// 
         /// If the destination directory does not exist it will be created. This could throw an exception if there's a problem creating the directory.
         /// 
         /// To maximise speed, the copy process will use two 1MB buffers which will be flipped so that as it's reading a second buffer it will write the previous buffer asynchronously.
@@ -200,46 +237,54 @@ namespace CopyMostRecent
         /// <param name="destination">The destination file.</param>
         /// <param name="notifyBytes">The number of bytes copied. Updated after every buffer.</param>
         /// <param name="token">A cancellation token.</param>
-        public async static Task CopyTo(FileInfo file, FileInfo destination, Action<int> notifyBytes, CancellationToken token)
+        public async static Task CopyTo(FileInfo file, FileInfo destination, Action<int> notifyBytes, CancellationToken token, bool dummyCopy = false)
         {
             const int bufferSize = 1024 * 1024;  
             byte[] bufferA = new byte[bufferSize], bufferB = new byte[bufferSize];
             bool A = true;
             int readCount = 0;
             Task writer = null;
-            //Console.WriteLine("Thread: " + Thread.CurrentThread.ManagedThreadId.ToString() + " - " + file + " - " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
-            using (FileStream srce = file.OpenRead())
+            System.Diagnostics.Debug.WriteLine("Thread: " + Thread.CurrentThread.ManagedThreadId.ToString() + " - " + file + " - " + DateTime.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture));
+            if (dummyCopy)
             {
-                if (!Directory.Exists(Path.GetDirectoryName(destination.FullName)))
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(destination.FullName));
-                }
-                using (var dest = destination.OpenWrite())
-                {
-                    dest.SetLength(srce.Length);
-                    for (long size = 0; size < file.Length; size += readCount)
-                    {
-                        if (token.IsCancellationRequested)
-                        {
-                            if ((file.Length - size) > (bufferSize * 256))   // More than 256MB to copy, stop copying immediately, else finish copying this file
-                            {
-                                dest.Close();
-                                srce.Close();
-                                token.ThrowIfCancellationRequested();
-                            }
-                        }
-                        readCount = srce.Read(A ? bufferA : bufferB, 0, bufferSize);
-                        writer?.Wait(); 
-                        writer = dest.WriteAsync(A ? bufferA : bufferB, 0, readCount);
-                        notifyBytes(readCount);
-                        A = !A;
-                    }
-                    writer?.Wait(); 
-                    dest.Close();
-                    srce.Close();
-                }
+                await Task.Delay(250);
+                notifyBytes((int)file.Length);
             }
-            destination.LastWriteTime = file.LastWriteTime;
+            else
+            {
+                using (FileStream srce = file.OpenRead())
+                {
+                    if (!Directory.Exists(Path.GetDirectoryName(destination.FullName)))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(destination.FullName));
+                    }
+                    using (var dest = destination.OpenWrite())
+                    {
+                        long size = 0;
+                        for (; size < file.Length; size += readCount)
+                        {
+                            if (token.IsCancellationRequested)
+                            {
+                                if ((file.Length - size) > (bufferSize * 256))   // More than 256MB to copy, stop copying immediately, else finish copying this file
+                                {
+                                    dest.Close();
+                                    srce.Close();
+                                    token.ThrowIfCancellationRequested();
+                                }
+                            }
+                            readCount = srce.Read(A ? bufferA : bufferB, 0, bufferSize);
+                            writer?.Wait();
+                            writer = dest.WriteAsync(A ? bufferA : bufferB, 0, readCount);
+                            notifyBytes(readCount);
+                            A = !A;
+                        }
+                        writer?.Wait();
+                        dest.Close();
+                        srce.Close();
+                    }
+                }
+                destination.LastWriteTime = file.LastWriteTime;
+            }
         }
     }
 }

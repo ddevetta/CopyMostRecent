@@ -61,6 +61,24 @@ namespace CopyMostRecent
             get { return (string)(this["IgnoreList"]); }
             set { this["IgnoreList"] = value; }
         }
+
+        /// <summary>
+        /// Gets or sets the 'dummy copy' flag'.
+        /// If this flag is set to true, then the copy operations are not actually performed but the copy
+        /// function will delay for 250ms to simulate some copy time.
+        /// This is not set in the user options dialog - set it manually in the file to alter it's value.
+        /// </summary>
+        /// <value>
+        /// true or false.
+        /// </value>
+        [UserScopedSettingAttribute()]
+        [DefaultSettingValueAttribute("false")]
+        [XmlElement]
+        public bool DummyCopy
+        {
+            get { return (bool)(this["DummyCopy"]); }
+            set { this["DummyCopy"] = value; }
+        }
     }
 
     /// <summary>

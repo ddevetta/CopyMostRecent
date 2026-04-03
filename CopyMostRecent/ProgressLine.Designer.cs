@@ -37,9 +37,12 @@
             // 
             // lblFileName
             // 
+            this.lblFileName.AutoEllipsis = true;
+            this.lblFileName.BackColor = System.Drawing.SystemColors.Control;
             this.lblFileName.Font = new System.Drawing.Font("Microsoft Sans Serif", 7.8F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.lblFileName.Location = new System.Drawing.Point(7, 8);
             this.lblFileName.Name = "lblFileName";
+            this.lblFileName.RightToLeft = System.Windows.Forms.RightToLeft.No;
             this.lblFileName.Size = new System.Drawing.Size(454, 23);
             this.lblFileName.TabIndex = 0;
             this.lblFileName.Text = "lblFileName";
@@ -74,7 +77,7 @@
             // 
             // btnErrors
             // 
-            this.btnErrors.Location = new System.Drawing.Point(425, 5);
+            this.btnErrors.Location = new System.Drawing.Point(425, 8);
             this.btnErrors.Name = "btnErrors";
             this.btnErrors.Size = new System.Drawing.Size(36, 28);
             this.btnErrors.TabIndex = 4;

@@ -18,7 +18,14 @@ namespace CopyMostRecent
 
             this.BackColor = Color.FromArgb(210, 220, 240);
             lblCount.Text = lblSize.Text = lblFileName.Text = lblState.Text = string.Empty;
+            lblFileName.BackColor = Color.Transparent;
             btnErrors.Visible = false;
+        }
+
+        public override string Text
+        { 
+            get { return lblFileName.Text; }
+            set { lblFileName.Text = value; }
         }
 
         /// <summary>

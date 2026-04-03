@@ -50,6 +50,10 @@ namespace CopyMostRecent
         /// <param name="file">The folder and file to save as.</param>
         public async void Save(string file)
         {
+            if (!Directory.Exists(Path.GetDirectoryName(file)))  // If the file's directory does not exist, create it
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(file));
+            }
             using (FileStream stream = File.Create(file))
             {
                 var options = new JsonSerializerOptions { WriteIndented = true };
